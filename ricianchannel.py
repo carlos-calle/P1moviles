@@ -17,6 +17,13 @@ class RicianChannel:
         self.fD = fD
         self.delays = np.array(delays)
         self.gains = 10**(np.array(gains)/20)   # amplitud lineal
+        
+        # Normalización unitaria de potencia del PDP
+        power_linear = self.gains**2
+        sum_power = np.sum(power_linear)
+        if sum_power > 0:
+            self.gains = self.gains / np.sqrt(sum_power)
+            
         self.K = 10**(K_dB/10)                  # factor K lineal
         assert len(self.delays) == len(self.gains), "delays y gains deben tener la misma longitud"
         self.num_paths = len(delays)
@@ -34,7 +41,7 @@ class RicianChannel:
         for n in range(N_s):
             h += np.exp(1j * (2*np.pi*fD*np.cos(alpha_n[n])*t + phi_n[n]))
 
-        h = h * np.sqrt(2 / N_s)
+        h = h * (1/np.sqrt(N_s))
         return h
 
     def rician_fading(self, N):
@@ -42,9 +49,10 @@ class RicianChannel:
         Genera un proceso Rician combinando un componente LOS y otro difuso.
         """
         rayleigh = self.jakes_fading(N)
-        # Componente LOS con fase aleatoria
+        # Componente LOS con corrimiento Doppler
+        t = np.arange(N) / self.Fs
         theta = 2 * np.pi * np.random.rand()
-        los = np.exp(1j * theta) * np.ones(N)
+        los = np.exp(1j * (2 * np.pi * self.fD * t + theta))
         
         # Combinación según el factor K
         rician = (np.sqrt(self.K/(self.K+1)) * los) + (np.sqrt(1/(self.K+1)) * rayleigh)
@@ -59,7 +67,13 @@ class RicianChannel:
 
         for i in range(self.num_paths):
             delay_samples = int(np.round(self.delays[i] * self.Fs))
-            fading = self.rician_fading(N)
+            
+            # Solo la primera vía tiene componente de visión directa (LOS)
+            if i == 0:
+                fading = self.rician_fading(N)
+            else:
+                fading = self.jakes_fading(N)
+                
             x_delayed = np.concatenate([np.zeros(delay_samples), x])[:N]
             y += self.gains[i] * fading * x_delayed
 
@@ -92,7 +106,12 @@ class RicianChannel:
         delays = []
         
         for i in range(self.num_paths):
-            fading = self.rician_fading(N)[0]  # una muestra instantánea
+            # Solo la primera vía retiene componente especular
+            if i == 0:
+                fading = self.rician_fading(N)[0]  # una muestra instantánea
+            else:
+                fading = self.jakes_fading(N)[0]
+                
             tap_value = self.gains[i] * fading
             taps.append(tap_value)
             delays.append(self.delays[i])

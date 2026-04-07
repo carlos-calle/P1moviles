@@ -14,6 +14,13 @@ class RayleighChannel:
         self.fD = fD
         self.delays = np.array(delays)
         self.gains = 10**(np.array(gains)/20)
+        
+        # Normalización unitaria de potencia del PDP
+        power_linear = self.gains**2
+        sum_power = np.sum(power_linear)
+        if sum_power > 0:
+            self.gains = self.gains / np.sqrt(sum_power)
+            
         assert len(self.delays) == len(self.gains), "delays y powers deben tener la misma longitud"
         self.num_paths = len(delays)
     
@@ -38,7 +45,7 @@ class RayleighChannel:
             h += np.exp(1j * (2*np.pi*fD*np.cos(alpha_n[n])*t + phi_n[n]))
 
         # Normalizamos para que la potencia media sea 1
-        h = h * np.sqrt(2 / N_s)
+        h = h * (1/np.sqrt(N_s))
         return h
     
     def filter(self, x):
