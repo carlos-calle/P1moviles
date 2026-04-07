@@ -14,11 +14,7 @@ class ChannelSimulatorApp:
         self.root.title("Simulador de Canal Inalámbrico")
         self.root.geometry("1100x750")
         
-        # Configure plotting area
-        self.figure, self.axs = plt.subplots(2, 2, figsize=(10, 6))
-        self.figure.tight_layout(pad=3.0)
-        
-        # Layout
+        # Layout principal
         self.main_frame = ttk.Frame(root)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
         
@@ -28,9 +24,30 @@ class ChannelSimulatorApp:
         self.plot_frame = ttk.Frame(self.main_frame)
         self.plot_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
-        # Add canvas
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.plot_frame)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        # Configurar Notebook (Pestañas)
+        self.notebook = ttk.Notebook(self.plot_frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # Pestaña 1: Tiempo
+        self.tab_time = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_time, text="Dominio del Tiempo")
+        self.fig_time, self.axs_time = plt.subplots(2, 1, figsize=(10, 6))
+        self.canvas_time = FigureCanvasTkAgg(self.fig_time, master=self.tab_time)
+        self.canvas_time.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Pestaña 2: Frecuencia
+        self.tab_freq = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_freq, text="Dominio de la Frecuencia")
+        self.fig_freq, self.axs_freq = plt.subplots(2, 1, figsize=(10, 6))
+        self.canvas_freq = FigureCanvasTkAgg(self.fig_freq, master=self.tab_freq)
+        self.canvas_freq.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Pestaña 3: Espacio
+        self.tab_space = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_space, text="Dominio Espacial")
+        self.fig_space, self.ax_space = plt.subplots(1, 1, figsize=(10, 6))
+        self.canvas_space = FigureCanvasTkAgg(self.fig_space, master=self.tab_space)
+        self.canvas_space.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
         self.create_inputs()
         
@@ -78,11 +95,6 @@ class ChannelSimulatorApp:
         self.e_v.insert(0, "30")
         self.e_v.pack(fill=tk.X, padx=5)
         
-        ttk.Label(self.params_frame, text="Frecuencia Muestreo Fs (Hz):").pack(anchor=tk.W, pady=pad_y, padx=5)
-        self.e_fs = ttk.Entry(self.params_frame)
-        self.e_fs.insert(0, "10000")
-        self.e_fs.pack(fill=tk.X, padx=5)
-        
         # Small Scale
         ttk.Label(self.params_frame, text="Retardos (s) [separados por comas]:").pack(anchor=tk.W, pady=(20, 2), padx=5)
         self.e_delays = ttk.Entry(self.params_frame)
@@ -94,13 +106,8 @@ class ChannelSimulatorApp:
         self.e_gains.insert(0, "0, -9.7, -19.2, -22.8, -27")
         self.e_gains.pack(fill=tk.X, padx=5)
         
-        # Large Scale
-        ttk.Label(self.params_frame, text="Pérdidas Ref. PL0 a 1m (dB):").pack(anchor=tk.W, pady=(20, 2), padx=5)
-        self.e_pl0 = ttk.Entry(self.params_frame)
-        self.e_pl0.insert(0, "30")
-        self.e_pl0.pack(fill=tk.X, padx=5)
-        
-        ttk.Label(self.params_frame, text="Exponente de Pérdidas n:").pack(anchor=tk.W, pady=pad_y, padx=5)
+        # Large Scale (Entorno Urbano)
+        ttk.Label(self.params_frame, text="Exponente de Pérdidas n:").pack(anchor=tk.W, pady=(20, 2), padx=5)
         self.e_n = ttk.Entry(self.params_frame)
         self.e_n.insert(0, "3.5")
         self.e_n.pack(fill=tk.X, padx=5)
@@ -141,7 +148,7 @@ class ChannelSimulatorApp:
         try:
             fc = float(self.e_fc.get()) * 1e9
             v_kmh = float(self.e_v.get())
-            Fs = float(self.e_fs.get())
+            Fs = 10000.0  # Frecuencia de muestreo estática
             
             delays = [float(x.strip()) for x in self.e_delays.get().split(',')]
             gains = [float(x.strip()) for x in self.e_gains.get().split(',')]
@@ -149,7 +156,7 @@ class ChannelSimulatorApp:
             if len(delays) != len(gains):
                 raise ValueError("La lista de retardos y ganancias deben tener el mismo número de elementos.")
             
-            PL0 = float(self.e_pl0.get())
+            PL0 = 30.0  # Pérdida de referencia estática (dB)
             n = float(self.e_n.get())
             sigma = float(self.e_sigma.get())
             
@@ -172,43 +179,62 @@ class ChannelSimulatorApp:
                 K_dB=k_db
             )
             
-            # Dibujar resultados (Limpiamos frames)
-            for ax_row in self.axs:
-                for ax in ax_row:
-                    ax.clear()
-                    
-            # 1: Pequena escala (Tiempo)
-            self.axs[0, 0].plot(results['time'], results['power_small_db'])
-            self.axs[0, 0].set_title("Desvanecimiento de pequeña escala")
-            self.axs[0, 0].set_xlabel("Tiempo (s)")
-            self.axs[0, 0].set_ylabel("Potencia [dB]")
-            self.axs[0, 0].grid(True)
+            # Limpiamos todas las gráficas
+            for ax in self.axs_time: ax.clear()
+            for ax in self.axs_freq: ax.clear()
+            self.ax_space.clear()
             
-            # 2: Gran escala (Distancia)
-            self.axs[0, 1].plot(results['distancias'], results['potencias_large_db'])
-            self.axs[0, 1].set_title("Desvanecimiento de gran escala")
-            self.axs[0, 1].set_xlabel("Distancia (m)")
-            self.axs[0, 1].set_ylabel("Potencia [dB]")
-            self.axs[0, 1].grid(True)
+            # --- PESTAÑA 1: TIEMPO ---
+            # 1A: Desvanecimiento pequeña escala (Suma total)
+            self.axs_time[0].plot(results['time'], results['power_small_db'])
+            self.axs_time[0].set_title("Desvanecimiento (Toda la Señal)")
+            self.axs_time[0].set_xlabel("Tiempo (s)")
+            self.axs_time[0].set_ylabel("Potencia [dB]")
+            self.axs_time[0].grid(True)
             
-            # 3: Respuesta Frecuencia (Banda Base)
-            self.axs[1, 0].plot(results['freqs_base']/1e3, results['mag_base_db'])
-            self.axs[1, 0].set_title("Respuesta Frecuencial (Banda Base)")
-            self.axs[1, 0].set_xlabel("Frecuencia [kHz]")
-            self.axs[1, 0].set_ylabel("Magnitud [dB]")
-            self.axs[1, 0].grid(True)
+            # 1B: Componentes Multi-paths individuales
+            for i, comp_power in enumerate(results['multipath_components']):
+                self.axs_time[1].plot(results['time'], comp_power, label=f"Eco {i+1}")
+            self.axs_time[1].set_title("Componentes Multipaths Individuales")
+            self.axs_time[1].set_xlabel("Tiempo (s)")
+            self.axs_time[1].set_ylabel("Potencia [dB]")
+            self.axs_time[1].legend(loc='upper right', fontsize='small')
+            self.axs_time[1].grid(True)
             
-            # 4: Respuesta Frecuencia (Paso Banda)
-            self.axs[1, 1].plot(results['freqs_fc']/1e9, results['mag_fc_db'])
-            self.axs[1, 1].vlines([fc/1e9], np.min(results['mag_fc_db']), np.max(results['mag_fc_db']), colors='red', label=f"fc = {fc/1e9:.2f} GHz")
-            self.axs[1, 1].set_title("Respuesta Frecuencial (Paso Banda)")
-            self.axs[1, 1].set_xlabel("Frecuencia [GHz]")
-            self.axs[1, 1].set_ylabel("Magnitud [dB]")
-            self.axs[1, 1].legend()
-            self.axs[1, 1].grid(True)
+            # --- PESTAÑA 2: FRECUENCIA ---
+            # 2A: Perfil de Retardo de Potencia (PDP)
+            delays_us = np.array(delays) * 1e6
+            self.axs_freq[0].stem(delays_us, gains, basefmt=" ", markerfmt="ro", linefmt="r-")
+            self.axs_freq[0].set_title("Perfil de Retardo de Potencia (PDP)")
+            self.axs_freq[0].set_xlabel("Retardo [μs]")
+            self.axs_freq[0].set_ylabel("Ganancia [dB]")
+            self.axs_freq[0].grid(True)
             
-            self.figure.tight_layout(pad=3.0)
-            self.canvas.draw()
+            # 2B: Respuesta Frecuencia (Paso Banda)
+            self.axs_freq[1].plot(results['freqs_fc']/1e9, results['mag_fc_db'])
+            self.axs_freq[1].vlines([fc/1e9], np.min(results['mag_fc_db']), np.max(results['mag_fc_db']), colors='red', label=f"fc = {fc/1e9:.2f} GHz")
+            self.axs_freq[1].set_title("Respuesta Frecuencial (Paso Banda)")
+            self.axs_freq[1].set_xlabel("Frecuencia [GHz]")
+            self.axs_freq[1].set_ylabel("Magnitud [dB]")
+            self.axs_freq[1].legend()
+            self.axs_freq[1].grid(True)
+            
+            # --- PESTAÑA 3: ESPACIO ---
+            # 3A: Gran escala (Distancia)
+            self.ax_space.plot(results['distancias'], results['potencias_large_db'])
+            self.ax_space.set_title("Desvanecimiento de Gran Escala")
+            self.ax_space.set_xlabel("Distancia (m)")
+            self.ax_space.set_ylabel("Potencia [dB]")
+            self.ax_space.grid(True)
+            
+            # Refrescar layout y Canvas
+            self.fig_time.tight_layout(pad=3.0)
+            self.fig_freq.tight_layout(pad=3.0)
+            self.fig_space.tight_layout(pad=3.0)
+            
+            self.canvas_time.draw()
+            self.canvas_freq.draw()
+            self.canvas_space.draw()
             
         except Exception as e:
             messagebox.showerror("Error en la Simulación", f"Se produjo un error crítico durante la simulación:\n{e}")

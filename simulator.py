@@ -21,10 +21,21 @@ def run_channel_simulation(fc, v_kmh, Fs, delays, gains, PL0, n, sigma, fading_t
         chan = RayleighChannel(Fs, fD, delays, gains)
     
     # 2. Desvanecimiento de Pequeña Escala (Dominio Temporal)
-    sig = 1j * np.ones(2000)
+    N_samples = 2000
+    sig = 1j * np.ones(N_samples)
     y_small = chan.filter(sig)
     time = np.arange(len(y_small))/Fs
-    power_small_db = 20*np.log10(np.abs(y_small))
+    power_small_db = 20*np.log10(np.abs(y_small) + 1e-10)
+    
+    # 2.1 Componentes Multipath Individuales
+    multipath_components = []
+    for i in range(len(delays)):
+        if fading_type == "Rician" and i == 0:
+            f = chan.rician_fading(N_samples)
+        else:
+            f = chan.jakes_fading(N_samples)
+        comp_power_db = 20*np.log10(np.abs(chan.gains[i] * f) + 1e-10)
+        multipath_components.append(comp_power_db)
     
     # 3. Desvanecimiento de Gran Escala (Dominio Espacial)
     distancias = np.linspace(1, 100, 50)
@@ -52,5 +63,6 @@ def run_channel_simulation(fc, v_kmh, Fs, delays, gains, PL0, n, sigma, fading_t
         'freqs_base': freqs_base,
         'mag_base_db': mag_base_db,
         'freqs_fc': freqs_fc,
-        'mag_fc_db': mag_fc_db
+        'mag_fc_db': mag_fc_db,
+        'multipath_components': multipath_components
     }
