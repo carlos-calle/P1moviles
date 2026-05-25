@@ -55,8 +55,7 @@ Para ejecutar este simulador, asegúrate de tener instalado Python 3.x.
 2. Es recomendable crear un entorno virtual:
    ```bash
    python3 -m venv .venv
-   source .venv/bin/activate  # En Linux/Mac
-   # .venv\Scripts\activate   # En Windows
+   source .venv/bin/activate
    ```
 3. Instala las dependencias necesarias:
    ```bash

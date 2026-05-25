@@ -69,7 +69,6 @@ def run_channel_simulation(
     else:
         chan = RayleighChannel(time_Fs, fD, delays, gains)
 
-    # Desvanecimiento de pequena escala: suma coherente de las mismas componentes.
     sig = np.ones(N_samples, dtype=complex)
     path_taps_time = chan.path_coefficients(N_samples)
     carrier_phase = np.exp(-1j * 2.0 * np.pi * fc * delays)
@@ -80,17 +79,14 @@ def run_channel_simulation(
     power_small_db = _to_db(y_small)
     multipath_components = [_to_db(component) for component in components_complex]
 
-    # Desvanecimiento de gran escala.
     distancias = np.linspace(1.0, 100.0, 80)
     large_scale_gain = chan.large_scale_fading(distancias, fc, PL0=PL0, n=n, sigma=sigma, d0=1.0)
     potencias_large_db = _to_db(large_scale_gain)
 
-    # Parametros de coherencia.
     Tc = 0.423 / fD if fD > 0 else float("inf")
     tau_rms = _rms_delay_spread(delays, gains)
     Bc = 1.0 / (5.0 * tau_rms) if tau_rms > 0 else float("inf")
 
-    # Respuesta frecuencial: snapshot consistente con la primera muestra temporal.
     h_taps = path_taps_time[:, 0]
     bw_hz = 5e6
     freq_offsets = np.linspace(-bw_hz, bw_hz, 4096)
@@ -102,7 +98,6 @@ def run_channel_simulation(
     H_fc = chan.channel_response(freqs_fc, h_taps)
     mag_fc_db = _to_db(H_fc)
 
-    # Autocorrelacion temporal teorica del modelo Doppler.
     if fD > 0:
         corr_t_max = min(max(5.0 * Tc, 0.05), time[-1])
         delta_t = np.linspace(0.0, corr_t_max, 1000)
@@ -116,7 +111,6 @@ def run_channel_simulation(
         delta_t = np.linspace(0.0, time[-1], 1000)
         R_t = np.ones_like(delta_t)
 
-    # Correlacion frecuencial obtenida directamente del PDP.
     powers = 10 ** (gains / 10.0)
     powers = powers / np.sum(powers)
     if np.isfinite(Bc):
