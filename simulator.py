@@ -1,68 +1,148 @@
 import numpy as np
+from scipy.special import j0
+
 from rayleighchannel import RayleighChannel
 from ricianchannel import RicianChannel
 
-def run_channel_simulation(fc, v_kmh, Fs, delays, gains, PL0, n, sigma, fading_type="Rayleigh", K_dB=6):
-    """
-    Recibe variables de entrada limpias (provenientes de la GUI sin dependencia a `tkinter`),
-    ejecuta la instanciación teórica de la simulación del canal base de propagación 
-    y retorna diccionarios con los ejes computados para delegarle su dibujo libre a otra clase.
-    """
-    
-    # 1. Cálculos base físicos
-    v_ms = v_kmh / 3.6
-    c = 3e8
-    fD = (v_ms/c)*fc
 
-    # Instanciamos el modelo de canal real
+EPS = 1e-12
+
+
+def _to_db(amplitude):
+    return 20.0 * np.log10(np.abs(amplitude) + EPS)
+
+
+def _rms_delay_spread(delays, gains_db):
+    powers = 10 ** (gains_db / 10.0)
+    powers = powers / np.sum(powers)
+    tau_mean = np.sum(powers * delays)
+    tau_second = np.sum(powers * delays**2)
+    return np.sqrt(max(0.0, tau_second - tau_mean**2))
+
+
+def run_channel_simulation(
+    fc,
+    v_kmh,
+    Fs,
+    delays,
+    gains,
+    PL0,
+    n,
+    sigma,
+    fading_type="Rayleigh",
+    K_dB=6,
+):
+    """
+    Ejecuta la simulacion del canal sin depender de tkinter.
+
+    Los retardos se reciben en segundos. Fs representa la frecuencia de muestreo
+    de la evolucion temporal del fading, no la resolucion de los retardos
+    multicamino; la selectividad por retardo se evalua analiticamente en H(f).
+    """
+    fc = float(fc)
+    v_kmh = float(v_kmh)
+    base_Fs = float(Fs)
+    delays = np.asarray(delays, dtype=float)
+    gains = np.asarray(gains, dtype=float)
+
+    if fc <= 0:
+        raise ValueError("La frecuencia portadora debe ser mayor que cero.")
+    if base_Fs <= 0:
+        raise ValueError("Fs debe ser mayor que cero.")
+    if delays.ndim != 1 or gains.ndim != 1 or len(delays) == 0:
+        raise ValueError("Retardos y ganancias deben ser listas no vacias.")
+    if len(delays) != len(gains):
+        raise ValueError("Retardos y ganancias deben tener el mismo numero de elementos.")
+    if np.any(delays < 0):
+        raise ValueError("Los retardos no pueden ser negativos.")
+
+    c = 3e8
+    v_ms = v_kmh / 3.6
+    fD = abs(v_ms / c) * fc
+
+    time_Fs = max(base_Fs, 20.0 * fD) if fD > 0 else base_Fs
+    time_Fs = min(time_Fs, 100_000.0)
+    N_samples = int(np.clip(round(0.25 * time_Fs), 2_000, 20_000))
+
     if fading_type == "Rician":
-        chan = RicianChannel(Fs, fD, delays, gains, K_dB=K_dB)
+        chan = RicianChannel(time_Fs, fD, delays, gains, K_dB=K_dB)
     else:
-        chan = RayleighChannel(Fs, fD, delays, gains)
-    
-    # 2. Desvanecimiento de Pequeña Escala (Dominio Temporal)
-    N_samples = 2000
-    sig = 1j * np.ones(N_samples)
-    y_small = chan.filter(sig)
-    time = np.arange(len(y_small))/Fs
-    power_small_db = 20*np.log10(np.abs(y_small) + 1e-10)
-    
-    # 2.1 Componentes Multipath Individuales
-    multipath_components = []
-    for i in range(len(delays)):
-        if fading_type == "Rician" and i == 0:
-            f = chan.rician_fading(N_samples)
-        else:
-            f = chan.jakes_fading(N_samples)
-        comp_power_db = 20*np.log10(np.abs(chan.gains[i] * f) + 1e-10)
-        multipath_components.append(comp_power_db)
-    
-    # 3. Desvanecimiento de Gran Escala (Dominio Espacial)
-    distancias = np.linspace(1, 100, 50)
-    potencias_large_db = [20*np.log10(chan.large_scale_fading(d, fc, PL0=PL0, n=n, sigma=sigma)) for d in distancias]
-    
-    # 4. Respuesta Frecuencial (Dominio Frecuencial / Banda Base)
-    N_freq = 1024
-    freqs_base = np.linspace(-Fs, Fs, N_freq)
-    _, h_taps = chan.impulse_response()
-    H_base = chan.channel_response(freqs_base, h_taps)
-    mag_base_db = 20*np.log10(np.abs(H_base) + 1e-10)
-    
-    # 5. Respuesta Frecuencial (Paso Banda original sobre fc)
-    # Evitamos aliasing visual limitando el ancho de banda a graficar a 10 MHz (±5 MHz) y subiendo puntos
+        chan = RayleighChannel(time_Fs, fD, delays, gains)
+
+    # Desvanecimiento de pequena escala: suma coherente de las mismas componentes.
+    sig = np.ones(N_samples, dtype=complex)
+    path_taps_time = chan.path_coefficients(N_samples)
+    carrier_phase = np.exp(-1j * 2.0 * np.pi * fc * delays)
+    components_complex = path_taps_time * carrier_phase[:, np.newaxis] * sig[np.newaxis, :]
+    y_small = np.sum(components_complex, axis=0)
+
+    time = np.arange(N_samples) / time_Fs
+    power_small_db = _to_db(y_small)
+    multipath_components = [_to_db(component) for component in components_complex]
+
+    # Desvanecimiento de gran escala.
+    distancias = np.linspace(1.0, 100.0, 80)
+    large_scale_gain = chan.large_scale_fading(distancias, fc, PL0=PL0, n=n, sigma=sigma, d0=1.0)
+    potencias_large_db = _to_db(large_scale_gain)
+
+    # Parametros de coherencia.
+    Tc = 0.423 / fD if fD > 0 else float("inf")
+    tau_rms = _rms_delay_spread(delays, gains)
+    Bc = 1.0 / (5.0 * tau_rms) if tau_rms > 0 else float("inf")
+
+    # Respuesta frecuencial: snapshot consistente con la primera muestra temporal.
+    h_taps = path_taps_time[:, 0]
     bw_hz = 5e6
-    freqs_fc = np.linspace(fc - bw_hz, fc + bw_hz, 4096)
+    freq_offsets = np.linspace(-bw_hz, bw_hz, 4096)
+    freqs_base = freq_offsets
+    H_base = chan.channel_response(freqs_base, h_taps)
+    mag_base_db = _to_db(H_base)
+
+    freqs_fc = fc + freq_offsets
     H_fc = chan.channel_response(freqs_fc, h_taps)
-    mag_fc_db = 20*np.log10(np.abs(H_fc) + 1e-10)
-    
+    mag_fc_db = _to_db(H_fc)
+
+    # Autocorrelacion temporal teorica del modelo Doppler.
+    if fD > 0:
+        corr_t_max = min(max(5.0 * Tc, 0.05), time[-1])
+        delta_t = np.linspace(0.0, corr_t_max, 1000)
+        diffuse_corr = j0(2.0 * np.pi * fD * delta_t)
+        if fading_type == "Rician":
+            K = chan.K
+            R_t = np.abs((K * np.exp(1j * 2.0 * np.pi * fD * delta_t) + diffuse_corr) / (K + 1.0))
+        else:
+            R_t = np.abs(diffuse_corr)
+    else:
+        delta_t = np.linspace(0.0, time[-1], 1000)
+        R_t = np.ones_like(delta_t)
+
+    # Correlacion frecuencial obtenida directamente del PDP.
+    powers = 10 ** (gains / 10.0)
+    powers = powers / np.sum(powers)
+    if np.isfinite(Bc):
+        corr_f_max = min(max(5.0 * Bc, 1e6), 20e6)
+    else:
+        corr_f_max = bw_hz
+    delta_f = np.linspace(0.0, corr_f_max, 1000)
+    R_f = np.abs(np.sum(powers[:, np.newaxis] * np.exp(-1j * 2.0 * np.pi * delays[:, np.newaxis] * delta_f[np.newaxis, :]), axis=0))
+
     return {
-        'time': time,
-        'power_small_db': power_small_db,
-        'distancias': distancias,
-        'potencias_large_db': potencias_large_db,
-        'freqs_base': freqs_base,
-        'mag_base_db': mag_base_db,
-        'freqs_fc': freqs_fc,
-        'mag_fc_db': mag_fc_db,
-        'multipath_components': multipath_components
+        "time": time,
+        "power_small_db": power_small_db,
+        "distancias": distancias,
+        "potencias_large_db": potencias_large_db,
+        "freqs_base": freqs_base,
+        "mag_base_db": mag_base_db,
+        "freqs_fc": freqs_fc,
+        "mag_fc_db": mag_fc_db,
+        "multipath_components": multipath_components,
+        "Tc": Tc,
+        "Bc": Bc,
+        "tau_rms": tau_rms,
+        "fD": fD,
+        "time_Fs": time_Fs,
+        "delta_t": delta_t,
+        "R_t": R_t,
+        "delta_f": delta_f,
+        "R_f": R_f,
     }

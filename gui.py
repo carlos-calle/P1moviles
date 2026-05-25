@@ -12,7 +12,7 @@ class ChannelSimulatorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Simulador de Canal Inalámbrico")
-        self.root.geometry("1100x750")
+        self.root.geometry("1150x780")
         
         # Layout principal
         self.main_frame = ttk.Frame(root)
@@ -31,7 +31,7 @@ class ChannelSimulatorApp:
         # Pestaña 1: Tiempo
         self.tab_time = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_time, text="Dominio del Tiempo")
-        self.fig_time, self.axs_time = plt.subplots(2, 1, figsize=(10, 6))
+        self.fig_time, self.ax_time = plt.subplots(1, 1, figsize=(10, 6))
         self.canvas_time = FigureCanvasTkAgg(self.fig_time, master=self.tab_time)
         self.canvas_time.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
@@ -49,6 +49,27 @@ class ChannelSimulatorApp:
         self.canvas_space = FigureCanvasTkAgg(self.fig_space, master=self.tab_space)
         self.canvas_space.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
+        # Pestaña 4: Componentes Individuales
+        self.tab_comp = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_comp, text="Componentes Individuales")
+        self.fig_comp, self.ax_comp = plt.subplots(1, 1, figsize=(10, 6))
+        self.canvas_comp = FigureCanvasTkAgg(self.fig_comp, master=self.tab_comp)
+        self.canvas_comp.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # Pestaña 5: Autocorrelación Temporal (Tc)
+        self.tab_corr_t = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_corr_t, text="Autocorrelación (Tc)")
+        self.fig_corr_t, self.ax_corr_t = plt.subplots(1, 1, figsize=(10, 6))
+        self.canvas_corr_t = FigureCanvasTkAgg(self.fig_corr_t, master=self.tab_corr_t)
+        self.canvas_corr_t.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # Pestaña 6: Autocorrelación Frecuencial (Bc)
+        self.tab_corr_f = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_corr_f, text="Correlación Frec. (Bc)")
+        self.fig_corr_f, self.ax_corr_f = plt.subplots(1, 1, figsize=(10, 6))
+        self.canvas_corr_f = FigureCanvasTkAgg(self.fig_corr_f, master=self.tab_corr_f)
+        self.canvas_corr_f.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
         self.create_inputs()
         
     def create_inputs(self):
@@ -58,7 +79,13 @@ class ChannelSimulatorApp:
         ttk.Label(self.params_frame, text="Perfil de Canal (UIT-R):").pack(anchor=tk.W, pady=pad_y, padx=5)
         self.profile_var = tk.StringVar()
         self.cb_profile = ttk.Combobox(self.params_frame, textvariable=self.profile_var, state='readonly')
-        self.cb_profile['values'] = ('Personalizado', 'ITU Pedestrian A', 'ITU Pedestrian B', 'ITU Vehicular A', 'ITU Vehicular B')
+        self.cb_profile['values'] = (
+            'Personalizado',
+            'ITU Pedestrian A',
+            'ITU Pedestrian B',
+            'ITU Vehicular A',
+            'ITU Vehicular B'
+        )
         self.cb_profile.current(0)
         self.cb_profile.pack(fill=tk.X, padx=5)
         self.cb_profile.bind('<<ComboboxSelected>>', self.on_profile_change)
@@ -96,9 +123,9 @@ class ChannelSimulatorApp:
         self.e_v.pack(fill=tk.X, padx=5)
         
         # Small Scale
-        ttk.Label(self.params_frame, text="Retardos (s) [separados por comas]:").pack(anchor=tk.W, pady=(20, 2), padx=5)
+        ttk.Label(self.params_frame, text="Retardos (us) [separados por comas]:").pack(anchor=tk.W, pady=(20, 2), padx=5)
         self.e_delays = ttk.Entry(self.params_frame)
-        self.e_delays.insert(0, "0, 0.000110, 0.000190, 0.000410, 0.000920")
+        self.e_delays.insert(0, "0, 0.110, 0.190, 0.410, 0.920")
         self.e_delays.pack(fill=tk.X, padx=5)
         
         ttk.Label(self.params_frame, text="Ganancias (dB) [separadas por comas]:").pack(anchor=tk.W, pady=pad_y, padx=5)
@@ -112,7 +139,7 @@ class ChannelSimulatorApp:
         self.e_n.insert(0, "3.5")
         self.e_n.pack(fill=tk.X, padx=5)
         
-        ttk.Label(self.params_frame, text="Desviación Shadowing sigma:").pack(anchor=tk.W, pady=pad_y, padx=5)
+        ttk.Label(self.params_frame, text="Desviación Shadowing sigma (dB):").pack(anchor=tk.W, pady=pad_y, padx=5)
         self.e_sigma = ttk.Entry(self.params_frame)
         self.e_sigma.insert(0, "4")
         self.e_sigma.pack(fill=tk.X, padx=5)
@@ -120,6 +147,41 @@ class ChannelSimulatorApp:
         # Run Button
         btn_run = ttk.Button(self.params_frame, text="Simular Canal", command=self.run_simulation)
         btn_run.pack(pady=30, fill=tk.X, padx=5)
+
+        # Labels for Results
+        ttk.Label(self.params_frame, text="Resultados:", font=('', 10, 'bold')).pack(anchor=tk.W, pady=(10, 2), padx=5)
+        self.lbl_fd = ttk.Label(self.params_frame, text="fD: -")
+        self.lbl_fd.pack(anchor=tk.W, pady=2, padx=5)
+        self.lbl_tau = ttk.Label(self.params_frame, text="tau_rms: -")
+        self.lbl_tau.pack(anchor=tk.W, pady=2, padx=5)
+        self.lbl_tc = ttk.Label(self.params_frame, text="Tc: -")
+        self.lbl_tc.pack(anchor=tk.W, pady=2, padx=5)
+        self.lbl_bc = ttk.Label(self.params_frame, text="Bc: -")
+        self.lbl_bc.pack(anchor=tk.W, pady=2, padx=5)
+
+    @staticmethod
+    def format_time(seconds):
+        if seconds == float('inf'):
+            return "Infinito"
+        if seconds < 1e-6:
+            return f"{seconds*1e9:.2f} ns"
+        if seconds < 1e-3:
+            return f"{seconds*1e6:.2f} us"
+        if seconds < 1:
+            return f"{seconds*1e3:.2f} ms"
+        return f"{seconds:.2f} s"
+
+    @staticmethod
+    def format_frequency(hz):
+        if hz == float('inf'):
+            return "Infinito"
+        if hz >= 1e9:
+            return f"{hz/1e9:.2f} GHz"
+        if hz >= 1e6:
+            return f"{hz/1e6:.2f} MHz"
+        if hz >= 1e3:
+            return f"{hz/1e3:.2f} kHz"
+        return f"{hz:.2f} Hz"
 
     def on_fading_change(self):
         if self.fading_var.get() == "Rician":
@@ -148,17 +210,29 @@ class ChannelSimulatorApp:
         try:
             fc = float(self.e_fc.get()) * 1e9
             v_kmh = float(self.e_v.get())
-            Fs = 10000.0  # Frecuencia de muestreo estática
+            Fs = 10000.0  # Frecuencia de muestreo de la evolución temporal del fading
             
-            delays = [float(x.strip()) for x in self.e_delays.get().split(',')]
+            delays_us = [float(x.strip()) for x in self.e_delays.get().split(',')]
+            delays = [d * 1e-6 for d in delays_us]
+            
             gains = [float(x.strip()) for x in self.e_gains.get().split(',')]
             
             if len(delays) != len(gains):
                 raise ValueError("La lista de retardos y ganancias deben tener el mismo número de elementos.")
+            if fc <= 0:
+                raise ValueError("La frecuencia portadora debe ser mayor que cero.")
+            if v_kmh < 0:
+                raise ValueError("La velocidad no puede ser negativa.")
+            if any(delay < 0 for delay in delays):
+                raise ValueError("Los retardos no pueden ser negativos.")
             
-            PL0 = 30.0  # Pérdida de referencia estática (dB)
+            PL0 = 30.0  # Pérdida de referencia a 1 m (dB)
             n = float(self.e_n.get())
             sigma = float(self.e_sigma.get())
+            if n <= 0:
+                raise ValueError("El exponente de pérdidas debe ser mayor que cero.")
+            if sigma < 0:
+                raise ValueError("La desviación de shadowing no puede ser negativa.")
             
             fading_type = self.fading_var.get()
             k_db = 0.0
@@ -180,26 +254,20 @@ class ChannelSimulatorApp:
             )
             
             # Limpiamos todas las gráficas
-            for ax in self.axs_time: ax.clear()
+            self.ax_time.clear()
             for ax in self.axs_freq: ax.clear()
             self.ax_space.clear()
+            self.ax_comp.clear()
+            self.ax_corr_t.clear()
+            self.ax_corr_f.clear()
             
             # --- PESTAÑA 1: TIEMPO ---
             # 1A: Desvanecimiento pequeña escala (Suma total)
-            self.axs_time[0].plot(results['time'], results['power_small_db'])
-            self.axs_time[0].set_title("Desvanecimiento (Toda la Señal)")
-            self.axs_time[0].set_xlabel("Tiempo (s)")
-            self.axs_time[0].set_ylabel("Potencia [dB]")
-            self.axs_time[0].grid(True)
-            
-            # 1B: Componentes Multi-paths individuales
-            for i, comp_power in enumerate(results['multipath_components']):
-                self.axs_time[1].plot(results['time'], comp_power, label=f"Eco {i+1}")
-            self.axs_time[1].set_title("Componentes Multipaths Individuales")
-            self.axs_time[1].set_xlabel("Tiempo (s)")
-            self.axs_time[1].set_ylabel("Potencia [dB]")
-            self.axs_time[1].legend(loc='upper right', fontsize='small')
-            self.axs_time[1].grid(True)
+            self.ax_time.plot(results['time'], results['power_small_db'])
+            self.ax_time.set_title("Desvanecimiento de Pequeña Escala")
+            self.ax_time.set_xlabel("Tiempo (s)")
+            self.ax_time.set_ylabel("Magnitud [dB]")
+            self.ax_time.grid(True)
             
             # --- PESTAÑA 2: FRECUENCIA ---
             # 2A: Perfil de Retardo de Potencia (PDP)
@@ -211,10 +279,11 @@ class ChannelSimulatorApp:
             self.axs_freq[0].grid(True)
             
             # 2B: Respuesta Frecuencia (Paso Banda)
-            self.axs_freq[1].plot(results['freqs_fc']/1e9, results['mag_fc_db'])
-            self.axs_freq[1].vlines([fc/1e9], np.min(results['mag_fc_db']), np.max(results['mag_fc_db']), colors='red', label=f"fc = {fc/1e9:.2f} GHz")
+            freq_offset_mhz = (results['freqs_fc'] - fc) / 1e6
+            self.axs_freq[1].plot(freq_offset_mhz, results['mag_fc_db'])
+            self.axs_freq[1].axvline(0, color='red', linestyle='--', label=f"fc = {fc/1e9:.2f} GHz")
             self.axs_freq[1].set_title("Respuesta Frecuencial (Paso Banda)")
-            self.axs_freq[1].set_xlabel("Frecuencia [GHz]")
+            self.axs_freq[1].set_xlabel("Desplazamiento respecto a fc [MHz]")
             self.axs_freq[1].set_ylabel("Magnitud [dB]")
             self.axs_freq[1].legend()
             self.axs_freq[1].grid(True)
@@ -222,19 +291,67 @@ class ChannelSimulatorApp:
             # --- PESTAÑA 3: ESPACIO ---
             # 3A: Gran escala (Distancia)
             self.ax_space.plot(results['distancias'], results['potencias_large_db'])
-            self.ax_space.set_title("Desvanecimiento de Gran Escala")
+            self.ax_space.set_title("Pérdida de Gran Escala")
             self.ax_space.set_xlabel("Distancia (m)")
-            self.ax_space.set_ylabel("Potencia [dB]")
+            self.ax_space.set_ylabel("Ganancia de canal [dB]")
             self.ax_space.grid(True)
             
+            # Actualizar Etiquetas de Resultados
+            Tc = results['Tc']
+            Bc = results['Bc']
+
+            self.lbl_fd.config(text=f"fD: {self.format_frequency(results['fD'])}")
+            self.lbl_tau.config(text=f"tau_rms: {self.format_time(results['tau_rms'])}")
+            self.lbl_tc.config(text=f"Tc: {self.format_time(Tc)}")
+            self.lbl_bc.config(text=f"Bc: {self.format_frequency(Bc)}")
+            
+            # --- PESTAÑA 4: COMPONENTES INDIVIDUALES ---
+            for i, comp in enumerate(results['multipath_components']):
+                self.ax_comp.plot(results['time'], comp, alpha=0.5, label=f"Rayo {i+1}")
+            self.ax_comp.plot(results['time'], results['power_small_db'], color='black', linewidth=2, label="Suma Total")
+            self.ax_comp.set_title("Componentes Individuales vs. Señal Total")
+            self.ax_comp.set_xlabel("Tiempo (s)")
+            self.ax_comp.set_ylabel("Potencia [dB]")
+            self.ax_comp.legend()
+            self.ax_comp.grid(True)
+            
+            # --- PESTAÑA 5: AUTOCORRELACIÓN TEMPORAL (Tc) ---
+            self.ax_corr_t.plot(results['delta_t'] * 1e3, results['R_t'])
+            self.ax_corr_t.axhline(y=0.5, color='r', linestyle='--', label="Correlación 0.5")
+            if np.isfinite(Tc):
+                self.ax_corr_t.axvline(Tc * 1e3, color='k', linestyle=':', label=f"Tc = {self.format_time(Tc)}")
+            self.ax_corr_t.set_title("Autocorrelación Temporal")
+            self.ax_corr_t.set_xlabel("Delta t [ms]")
+            self.ax_corr_t.set_ylabel("Coeficiente de Correlación")
+            self.ax_corr_t.legend()
+            self.ax_corr_t.grid(True)
+            
+            # --- PESTAÑA 6: AUTOCORRELACIÓN EN FRECUENCIA (Bc) ---
+            df_plot = results['delta_f'] / 1e6
+            self.ax_corr_f.plot(df_plot, results['R_f'])
+            self.ax_corr_f.axhline(y=0.5, color='r', linestyle='--', label="Correlación 0.5")
+            if np.isfinite(Bc):
+                self.ax_corr_f.axvline(Bc / 1e6, color='k', linestyle=':', label=f"Bc = {self.format_frequency(Bc)}")
+            self.ax_corr_f.set_title("Correlación en Frecuencia")
+            self.ax_corr_f.set_xlabel("Delta f [MHz]")
+            self.ax_corr_f.set_ylabel("Coeficiente de Correlación")
+            self.ax_corr_f.legend()
+            self.ax_corr_f.grid(True)
+
             # Refrescar layout y Canvas
             self.fig_time.tight_layout(pad=3.0)
             self.fig_freq.tight_layout(pad=3.0)
             self.fig_space.tight_layout(pad=3.0)
+            self.fig_comp.tight_layout(pad=3.0)
+            self.fig_corr_t.tight_layout(pad=3.0)
+            self.fig_corr_f.tight_layout(pad=3.0)
             
             self.canvas_time.draw()
             self.canvas_freq.draw()
             self.canvas_space.draw()
+            self.canvas_comp.draw()
+            self.canvas_corr_t.draw()
+            self.canvas_corr_f.draw()
             
         except Exception as e:
             messagebox.showerror("Error en la Simulación", f"Se produjo un error crítico durante la simulación:\n{e}")
